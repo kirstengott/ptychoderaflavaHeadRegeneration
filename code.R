@@ -7,14 +7,14 @@ opts_chunk$set(message=FALSE, results = 'hide', fig.keep="none", warning=FALSE, 
 ## ----libraries-----------------------------------------------------------
 library(tidyverse)
 library(pheatmap)
-library(GO.db)
+library(GO.db, lib.loc = '~/R/x86_64-pc-linux-gnu-library/3.2/')
 library(RColorBrewer)
 library(kiRsten)
 
 options(dplyr.width = Inf)
 
 
-
+setwd("~/projects/Ptychodera_DEA/github")
 ## ----functions-----------------------------------------------------------
 
 simpleCap <- function(x) {
@@ -86,6 +86,8 @@ calc.height <- function(go.df){
 up   <- read.table("allGO_upreg_GOterms.txt", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
 down <- read.table("allGO_downreg_GOterms.txt", header=TRUE, sep="\t", quote="", stringsAsFactors=FALSE)
 
+up <- up %>% dplyr::select(-Parent)
+down <- down %>% dplyr::select(-Parent)
 
 ## select the unique GO ids from the enrichment analysis
 up.terms.BP   <- filter(up, Ontol == "BP")$go_id
@@ -141,33 +143,41 @@ desc <- c("cell-cell signaling",
 
 bp <- rbind(up.anc.BP, down.anc.BP)
 
+
+
 bp.sub <- filter(bp, parent_term %in% desc) %>% 
   distinct(parent) %>%
   .$parent
 
 
 
-bp.sub.df           <- bp[which(bp$parent %in% bp.sub), ]
-colnames(bp.sub.df) <- c("parent", "parent_term", "go_id", "Term")
+bp.sub.df           <- unique(bp[which(bp$parent %in% bp.sub), ])
+colnames(bp.sub.df) <- c("parent", "parent_term", "go_id")
 
 
-bp.sub.up   <- bp.sub.df %>% filter(go_id %in% up$go_id)
-bp.sub.down <- bp.sub.df %>% filter(go_id %in% down$go_id)
+up <- filter(up, go_id %in% bp.sub.df$go_id)
+down <- filter(down, go_id %in% bp.sub.df$go_id)
 
 ## join in the GO term enrichment
-up.sub   <- left_join(up, bp.sub.up)
-down.sub <- left_join(down, bp.sub.down)
+up.sub   <- left_join(up, bp.sub.df, by = 'go_id')
+
+down.sub <- left_join(down, bp.sub.df, by = 'go_id')
 
 
 ## count number of genes in each parent
 up.sub.1 <- up.sub %>% 
   dplyr::select(parent, parent_term, go_id, Term, Genes) %>% 
-  arrange(parent) %>% 
-  group_by(parent) %>% 
-  mutate(parentNumGenes = length(unique(c(unlist(strsplit(Genes, split=", ")))))) %>%
-  ungroup() %>%
-  dplyr::select(parent, parent_term, parentNumGenes) %>%
-  distinct()
+  unnest(Genes = strsplit(Genes, split = ', ')) %>%
+  group_by(parent) %>%
+  dplyr::select(parent, parent_term)
+
+groups <- group_size(up.sub.1)
+
+up.sub.1 <- data.frame(distinct(ungroup(up.sub.1) ))
+
+up.sub.1$parentNumGenes <- groups
+
+
 
 
 ## format the data frame for the picture
@@ -180,6 +190,8 @@ names(num.genes) <- up.sub.1$parent_term
 ## relevel the factor for the picture
 up.sub.1         <- within(up.sub.1, 
                            parent_term <- factor(parent_term, levels=names(sort(num.genes, decreasing=FALSE))))
+
+
 png(filename="analysis_figures/UpDEAncestors.png", width=1000, height=1000)
 ggplot(up.sub.1, aes(y=parentNumGenes, x=parent_term)) +
   geom_bar(stat="identity") +
@@ -195,14 +207,18 @@ dev.off()
 
 ## Now do the same for the down regulated genes
 
-down.sub.1 <- down.sub %>%
-  dplyr::select(parent, parent_term, go_id, Term, Genes) %>%
-  arrange(parent) %>%
+down.sub.1 <- down.sub %>% 
+  dplyr::select(parent, parent_term, go_id, Term, Genes) %>% 
+  unnest(Genes = strsplit(Genes, split = ', ')) %>%
   group_by(parent) %>%
-  mutate(parentNumGenes = length(unique(c(unlist(strsplit(Genes, split=", ")))))) %>%
-  ungroup() %>%
-  dplyr::select(parent, parent_term, parentNumGenes) %>%
-  distinct()
+  dplyr::select(parent, parent_term)
+
+groups <- group_size(down.sub.1)
+
+down.sub.1 <- data.frame(distinct(ungroup(down.sub.1) ))
+
+down.sub.1$parentNumGenes <- groups
+
 
 
 down.sub.1[is.na(down.sub.1)] <- "Other"
@@ -236,13 +252,20 @@ down.sub.small <- down.sub %>% dplyr::select(go_id, Term, Genes, parent, parent_
 all.sub <- bind_rows(up.sub.small, down.sub.small)
 
 all.sub.1 <- all.sub %>% 
-  dplyr::select(parent, parent_term, go_id, Term, Genes) %>%
-  arrange(parent) %>%
+  dplyr::select(parent, parent_term, go_id, Term, Genes) %>% 
+  unnest(Genes = strsplit(Genes, split = ', ')) %>%
   group_by(parent) %>%
-  mutate(parentNumGenes = length(unique(c(unlist(strsplit(Genes, split=", ")))))) %>%
-  ungroup() %>%
-  dplyr::select(parent, parent_term, parentNumGenes) %>%
-  distinct()
+  dplyr::select(parent, parent_term)
+
+all.sub.2 <- all.sub %>% 
+  dplyr::select(parent, parent_term, go_id, Term, Genes) %>% 
+  unnest(Genes = strsplit(Genes, split = ', '))
+
+groups <- group_size(all.sub.1)
+
+all.sub.1 <- data.frame(distinct(ungroup(all.sub.1) ))
+
+all.sub.1$parentNumGenes <- groups
 
 
 sum.tot        <- sum(all.sub.1$parentNumGenes)
@@ -250,7 +273,7 @@ all.sub.1$perc <- (all.sub.1$parentNumGenes/sum.tot)*100
 all.sub.1      <- na.omit(all.sub.1)
  
 all.sub.1$parent_term       <- sapply(as.character(all.sub.1$parent_term), simpleCap)
-all.sub.1[4, "parent_term"] <- "FGFR Signaling Pathway"
+#all.sub.1[4, "parent_term"] <- "FGFR Signaling Pathway"
 
 new.levels <- c("cell-cell signaling",
                 "BMP signaling pathway",
@@ -287,6 +310,10 @@ ggplot(all.sub.1, aes(y=perc, x=parent_term)) +
         plot.title = element_text(size = 30), 
         text=element_text(size = 20))
 dev.off()
+  
+
+
+write.table(all.sub.2, file = 'genes2parents.txt', sep = "\t", quote = FALSE, row.names = FALSE)
 
 
 ## Now we will make a more generalized graph for GO slim enrichment

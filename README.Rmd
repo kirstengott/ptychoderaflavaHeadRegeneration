@@ -1,5 +1,15 @@
-# *Ptychodera flava* Head Regeneration Experiment
-Kirsten Gotting  
+---
+title: "*Ptychodera flava* Head Regeneration Experiment"
+author: "Kirsten Gotting"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    theme: cerulean
+    code_folding: hide
+    keep_md: true
+    
+---
 
 # Overview
 
@@ -23,16 +33,94 @@ RColorBrewer
 
 kiRsten (available [here](https://github.com/kirstengott/kiRsten) )
 
+```{r setup, include = FALSE}
+library(knitr)
+opts_chunk$set(message=FALSE, results = 'hide', fig.keep="all", warning=FALSE, error=FALSE, fig.path="./analysis_figures/")
 
 
+## ----libraries-----------------------------------------------------------
+library(tidyverse)
+library(pheatmap)
+library(GO.db, lib.loc = '~/R/x86_64-pc-linux-gnu-library/3.2/')
+library(RColorBrewer)
+library(kiRsten)
 
+options(dplyr.width = Inf)
+
+
+setwd("~/projects/Ptychodera_DEA/github")
+
+```
+
+```{r functions, include = FALSE}
+
+simpleCap <- function(x) {
+    s <- strsplit(x, " ")[[1]]
+    paste(toupper(substring(s, 1, 1)), substring(s, 2),
+          sep = "", collapse = " ")
+}
+
+get.anc.terms <- function(terms, ontol){
+    ## Return the Ancestor terms for a list of terms in a particular ontology
+    ## terms: a vector of GO terms specific to "ontol"
+    ## ontol: one of either "CC", "BP", "MF", for which "terms" came from.
+    require(GO.db)
+    require(parallel)
+    require(dplyr)
+    ## uppercase the ontology
+    ontol <- toupper(ontol)
+    ## Convert the object to a list
+    ont.name <- paste0("GO", ontol, "ANCESTOR")
+    ont      <- base::get(ont.name)
+    anc      <- as.list(ont)
+    ## Remove GO IDs that do not have any ancestor
+    anc       <- anc[!is.na(anc)]
+    anc.terms <- anc[terms]
+    ## find the GO term description for each parent term
+    terms <- lapply(anc.terms, function(x){
+        y  <- Term(GOTERM[x])
+        dx <- data.frame(parent = names(y), parent_term = y)
+        invisible(dx)
+    })        
+    ## attach the child term to the data frame of parent terms
+    terms1 <- lapply(names(terms), function(x){
+        df            <- terms[[x]]
+        df$child      <- x
+        df$child_term <- Term(GOTERM[x])
+        invisible(df)
+    })    
+    ## bind all of the terms together
+    terms.df <- dplyr::bind_rows(terms1)
+    invisible(terms.df)
+}
+
+fix.ontol <- function(x){
+    if (x =="MF"){
+        new.x <- "Molecular Function"}
+    if (x =="CC"){
+        new.x <- "Cellular Component"}
+    if (x =="BP"){
+        new.x <- "Biological Process"}
+    invisible(new.x)
+}
+
+
+calc.height <- function(go.df){
+    if (nrow(go.df) < 5){
+        height <- 170}
+    else{
+        height <- (nrow(go.df)/6)*100}
+    invisible(height)
+}
+
+```
 
 #Figures
 
 ## GO term Bar Plots
 
+```{r}
 
-```r
 ## The goal of this section is to find which differentially expressed genes are annotated to various different processes in development.
 
 
@@ -145,10 +233,10 @@ names(num.genes) <- up.sub.1$parent_term
 ## relevel the factor for the picture
 up.sub.1         <- within(up.sub.1, 
                            parent_term <- factor(parent_term, levels=names(sort(num.genes, decreasing=FALSE))))
+
 ```
 
-
-```r
+```{r}
 ggplot(up.sub.1, aes(y=parentNumGenes, x=parent_term)) +
   geom_bar(stat="identity") +
   coord_flip() +
@@ -157,10 +245,7 @@ ggplot(up.sub.1, aes(y=parentNumGenes, x=parent_term)) +
   ggtitle("Ancestral GO terms of Up Regulated Genes")
 ```
 
-![](./analysis_figures/unnamed-chunk-2-1.png)<!-- -->
-
-
-```r
+```{r}
 ## Now do the same for the down regulated genes
 
 down.sub.1 <- down.sub %>% 
@@ -195,10 +280,7 @@ ggplot(down.sub.1, aes(y=parentNumGenes, x=parent_term)) +
   ggtitle("Ancestral GO terms of Down Regulated Genes")
 ```
 
-![](./analysis_figures/unnamed-chunk-3-1.png)<!-- -->
-
-
-```r
+```{r}
 ## Now to the same except combining the enriched terms for the up and downregulated genes
 
 up.sub.small   <- up.sub %>% dplyr::select(go_id, Term, Genes, parent, parent_term)
@@ -259,19 +341,15 @@ ggplot(all.sub.1, aes(y=perc, x=parent_term)) +
   ylab("Percentage of Differentially Expressed Genes") + 
   xlab("Gene Ontology Term") + 
   ggtitle("Select GO terms of Differentially Expressed Genes")
-```
 
-![](./analysis_figures/unnamed-chunk-4-1.png)<!-- -->
 
-```r
 write.table(all.sub.2, file = 'genes2parents.txt', sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 
 ## GO Slim Enrichment Chart
 
 
-
-```r
+```{r, fig.height=15, fig.width=15}
 ## Now we will make a more generalized graph for GO slim enrichment
 
 all.up        <- read.table("goSlim_upreg_GOterms.txt", sep="\t", stringsAsFactors=FALSE, quote="",header=TRUE)
@@ -371,15 +449,13 @@ ggplot(go.df, aes(y=Num_Genes, x=Term, fill=Ontology, label = BH.correction)) +
         legend.position=c(1,0),
         strip.text.x = element_text(face="bold", size=15), 
         strip.text.y = element_text(face="bold", size=15))
-```
 
-![](./analysis_figures/unnamed-chunk-5-1.png)<!-- -->
+```
 
 
 ## Transcription Factor Heatmap
 
-
-```r
+```{r}
 ## Now we will make a heatmap for all of the genes annotated from transcription factor.org
 
 sig <- read.table("./significant.genes.txt", header=TRUE, quote="", sep="\t", stringsAsFactors=FALSE)
@@ -435,10 +511,9 @@ pheatmap(tf.lfc.t,
          fontsize=8)
 ```
 
-![](./analysis_figures/unnamed-chunk-6-1.png)<!-- -->
+```{r}
 
 
-```r
 ## Now we will make heatmaps for up and down regulated genes, as well as heatmaps for each individual cluster.
 
 
@@ -663,12 +738,14 @@ lapply(clusters, function(x){
              cellwidth = cell.width,  cellheight=10, border_color=NA,
              fontsize=8, height = new.height, filename = paste0("rendered_figures/down_", file.name, "_heatmap.png"))
 })
+
 ```
 
 ## Trend Line Plots
 
+```{r, fig.keep='all'}
 
-```r
+
 ########## MAKE TREND LINE PLOTS OF CLUSTERS ##########
 
 sub.sig           <- sig.table[,grep("log2FoldChange", colnames(sig.table), value=TRUE)]
@@ -717,11 +794,7 @@ ggplot(up.means, aes(x = Timepoint, y = aveFoldChange, group = Cluster, colour =
   ylab("Mean(Log2(FoldChange))") + xlab("Timepoint") +
   scale_colour_manual(values = up.colors) + 
   geom_errorbar(limits, width = 0.1, colour = "gray76")
-```
 
-![](./analysis_figures/unnamed-chunk-8-1.png)<!-- -->
-
-```r
 ggplot(down.means, aes(x = Timepoint, y = aveFoldChange, group = Cluster, colour = Cluster)) + 
   geom_line() +
   theme_bw() + 
@@ -729,9 +802,8 @@ ggplot(down.means, aes(x = Timepoint, y = aveFoldChange, group = Cluster, colour
   ylab("Mean(Log2(FoldChange))") + xlab("Timepoint") + 
   scale_colour_manual(values = down.colors) + 
   geom_errorbar(limits, width = 0.1, colour = "gray76")
-```
 
-![](./analysis_figures/unnamed-chunk-8-2.png)<!-- -->
+```
 
 #Links to Large figures created in code chunks
 
@@ -756,7 +828,10 @@ ggplot(down.means, aes(x = Timepoint, y = aveFoldChange, group = Cluster, colour
 [upregulated_heatmap](rendered_figures/upregulated_heatmap.png)
 
 
+```{r sessionInfo, echo=FALSE}
+dir.create('sessionInfo')
+writeLines(capture.output(sessionInfo()), "sessionInfo/sessionInfo1.txt")
+```
 
-
-#[R-session information](sessionInfo/sessionInfo1.txt)
+#[R-session information](`r paste0("sessionInfo/sessionInfo1.txt")`)
 
